@@ -1,0 +1,50 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Our Chat</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main class="app">
+    <section id="login" class="login">
+      <h1>our chat.</h1>
+      <p>Just you two.</p>
+      <form id="loginForm">
+        <input id="email" type="email" placeholder="Email" required autocomplete="username">
+        <input id="password" type="password" placeholder="Password" required autocomplete="current-password">
+        <button type="submit">Log in</button>
+        <p id="loginError" class="error"></p>
+      </form>
+    </section>
+
+    <section id="chat" class="chat hidden">
+      <header>
+        <div>
+          <h1>our chat.</h1>
+          <p id="status">Private conversation</p>
+        </div>
+        <button id="logout" class="secondary">Log out</button>
+      </header>
+
+      <div id="messages" class="messages">
+        <p class="muted">Loading messages...</p>
+      </div>
+
+      <form id="messageForm" class="composer">
+        <label class="attach" title="Send an image">
+          +
+          <input id="imageInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden>
+        </label>
+        <input id="messageInput" type="text" maxlength="3000" placeholder="Write a message..." autocomplete="off">
+        <button type="submit">Send</button>
+      </form>
+      <p id="notice" class="notice"></p>
+    </section>
+  </main>
+</body>
+</html>
