@@ -71,7 +71,7 @@ async function showChat(user) {
 
   newChannel.subscribe(status => {
     if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-      showNotice("Live connection interrupted. Refresh if messages stop updating.");
+      showNotice("Live connection interrupted. Refresh if needed.");
     } else if (status === "SUBSCRIBED") {
       showNotice("");
     }
@@ -100,11 +100,12 @@ async function loadMessages() {
         .limit(200);
 
       if (error) throw error;
-      if (!currentUser || currentUser.id !== userId) return;
+      if (currentUser?.id !== userId) return;
 
       const container = $("messages");
       const wasNearBottom =
-        container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+        container.scrollHeight - container.scrollTop -
+        container.clientHeight < 100;
 
       const fragment = document.createDocumentFragment();
 
@@ -118,7 +119,9 @@ async function loadMessages() {
 
         const sender = document.createElement("div");
         sender.className = "sender";
-        sender.textContent = message.user_id === userId ? "You" : "Friend";
+        sender.textContent =
+          message.user_id === userId ? "You" : "Friend";
+
         item.appendChild(sender);
 
         if (message.content) {
@@ -132,7 +135,7 @@ async function loadMessages() {
             .from("chat-images")
             .createSignedUrl(message.image_path, 3600);
 
-          if (!currentUser || currentUser.id !== userId) return;
+          if (currentUser?.id !== userId) return;
 
           if (!imageError && image?.signedUrl) {
             const img = document.createElement("img");
@@ -163,22 +166,42 @@ async function loadMessages() {
   }
 }
 
+async function clearAllMessages() {
+  const confirmed = confirm(
+    "Clear the chat for BOTH of you?\n\nYour friend must also type /clearall within 10 minutes."
+  );
+
+  if (!confirmed || !currentUser) return;
+
+  showNotice("Sending clear request...");
+
+  try {
+    const { data, error } = await db.rpc("request_clear_chat");
+
+    if (error) throw error;
+
+    if (data === "CLEARED") {
+      showNotice("Chat cleared for both of you.");
+      await loadMessages();
+    } else {
+      showNotice("Request sent. Waiting for your friend to type /clearall.");
+    }
+  } catch (error) {
+    showNotice(error.message || "Couldn't clear the chat.");
+  }
+}
+
 $("loginForm").addEventListener("submit", async event => {
   event.preventDefault();
   $("loginError").textContent = "";
 
-  const { data, error } = await db.auth.signInWithPassword({
+  const { error } = await db.auth.signInWithPassword({
     email: $("email").value.trim(),
     password: $("password").value
   });
 
   if (error) {
     $("loginError").textContent = error.message;
-    return;
-  }
-
-  if (data.user) {
-    await showChat(data.user);
   }
 });
 
@@ -188,7 +211,14 @@ $("messageForm").addEventListener("submit", async event => {
   if (!currentUser) return;
 
   const content = $("messageInput").value.trim();
+
   if (!content) return;
+
+  if (content.toLowerCase() === "/clearall") {
+    $("messageInput").value = "";
+    await clearAllMessages();
+    return;
+  }
 
   const userId = currentUser.id;
   $("messageInput").disabled = true;
@@ -201,7 +231,6 @@ $("messageForm").addEventListener("submit", async event => {
     });
 
     if (error) throw error;
-
     if (currentUser?.id !== userId) return;
 
     $("messageInput").value = "";
@@ -249,7 +278,8 @@ $("imageInput").addEventListener("change", async event => {
       "image/gif": "gif"
     };
 
-    const path = `${userId}/${crypto.randomUUID()}.${extensions[file.type]}`;
+    const path =
+      `${userId}/${crypto.randomUUID()}.${extensions[file.type]}`;
 
     const { error: uploadError } = await db.storage
       .from("chat-images")
@@ -267,7 +297,6 @@ $("imageInput").addEventListener("change", async event => {
     });
 
     if (messageError) throw messageError;
-
     if (currentUser?.id !== userId) return;
 
     showNotice("");
@@ -287,7 +316,7 @@ $("logout").addEventListener("click", async () => {
 
 db.auth.onAuthStateChange((event, session) => {
   if (session?.user) {
-    void showChat(session.user);
+    Promise.resolve().then(() => showChat(session.user));
   } else {
     showLogin();
   }
