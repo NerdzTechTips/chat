@@ -71,7 +71,7 @@ async function showChat(user) {
 
   newChannel.subscribe(status => {
     if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-      showNotice("Live connection interrupted. Refresh if needed.");
+      showNotice("Live connection interrupted. Refresh if messages stop updating.");
     } else if (status === "SUBSCRIBED") {
       showNotice("");
     }
@@ -104,7 +104,8 @@ async function loadMessages() {
 
       const container = $("messages");
       const wasNearBottom =
-        container.scrollHeight - container.scrollTop -
+        container.scrollHeight -
+        container.scrollTop -
         container.clientHeight < 100;
 
       const fragment = document.createDocumentFragment();
@@ -161,33 +162,46 @@ async function loadMessages() {
     } while (reloadPending && currentUser?.id === userId);
   } catch (error) {
     showNotice(error.message || "Couldn't load messages.");
+    console.error("Load messages error:", error);
   } finally {
     loadingMessages = false;
   }
 }
 
 async function clearAllMessages() {
+  if (!currentUser) return;
+
   const confirmed = confirm(
-    "Clear the chat for BOTH of you?\n\nYour friend must also type /clearall within 10 minutes."
+    "Clear the chat for BOTH of you?\n\n" +
+    "Your friend must also type /clearall within 10 minutes."
   );
 
-  if (!confirmed || !currentUser) return;
+  if (!confirmed) return;
 
   showNotice("Sending clear request...");
 
   try {
     const { data, error } = await db.rpc("request_clear_chat");
 
-    if (error) throw error;
+    if (error) {
+      console.error("Clear chat error:", error);
+      showNotice("Clear failed: " + error.message);
+      return;
+    }
 
     if (data === "CLEARED") {
       showNotice("Chat cleared for both of you.");
       await loadMessages();
+    } else if (data === "WAITING") {
+      showNotice(
+        "Request sent. Waiting for your friend to type /clearall."
+      );
     } else {
-      showNotice("Request sent. Waiting for your friend to type /clearall.");
+      showNotice("Unexpected response: " + String(data));
     }
   } catch (error) {
-    showNotice(error.message || "Couldn't clear the chat.");
+    console.error("Clear chat error:", error);
+    showNotice("Clear failed: " + error.message);
   }
 }
 
@@ -195,13 +209,21 @@ $("loginForm").addEventListener("submit", async event => {
   event.preventDefault();
   $("loginError").textContent = "";
 
-  const { error } = await db.auth.signInWithPassword({
-    email: $("email").value.trim(),
-    password: $("password").value
+  const email = $("email").value.trim();
+  const password = $("password").value;
+
+  const { data, error } = await db.auth.signInWithPassword({
+    email,
+    password
   });
 
   if (error) {
     $("loginError").textContent = error.message;
+    return;
+  }
+
+  if (data.user) {
+    await showChat(data.user);
   }
 });
 
@@ -237,10 +259,14 @@ $("messageForm").addEventListener("submit", async event => {
     showNotice("");
     await loadMessages();
   } catch (error) {
+    console.error("Send message error:", error);
     showNotice(error.message || "Couldn't send message.");
   } finally {
     $("messageInput").disabled = false;
-    $("messageInput").focus();
+
+    if (currentUser?.id === userId) {
+      $("messageInput").focus();
+    }
   }
 });
 
@@ -251,6 +277,7 @@ $("imageInput").addEventListener("change", async event => {
   if (!file || !currentUser) return;
 
   const userId = currentUser.id;
+
   const allowedTypes = [
     "image/jpeg",
     "image/png",
@@ -270,6 +297,8 @@ $("imageInput").addEventListener("change", async event => {
 
   showNotice("Uploading image...");
 
+  let uploadedPath = null;
+
   try {
     const extensions = {
       "image/jpeg": "jpg",
@@ -278,12 +307,12 @@ $("imageInput").addEventListener("change", async event => {
       "image/gif": "gif"
     };
 
-    const path =
+    uploadedPath =
       `${userId}/${crypto.randomUUID()}.${extensions[file.type]}`;
 
     const { error: uploadError } = await db.storage
       .from("chat-images")
-      .upload(path, file, {
+      .upload(uploadedPath, file, {
         contentType: file.type,
         upsert: false
       });
@@ -293,7 +322,7 @@ $("imageInput").addEventListener("change", async event => {
     const { error: messageError } = await db.from("messages").insert({
       user_id: userId,
       content: "",
-      image_path: path
+      image_path: uploadedPath
     });
 
     if (messageError) throw messageError;
@@ -302,6 +331,7 @@ $("imageInput").addEventListener("change", async event => {
     showNotice("");
     await loadMessages();
   } catch (error) {
+    console.error("Image upload error:", error);
     showNotice(error.message || "Couldn't upload image.");
   }
 });
